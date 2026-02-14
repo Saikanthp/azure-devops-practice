@@ -1,4 +1,4 @@
-name: Deploy Static Site to Azure WebApp
+name: Deploy Static Site to Azure WebAp
 
 on:
   push:
