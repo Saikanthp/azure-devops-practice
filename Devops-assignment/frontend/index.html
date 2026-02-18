@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Health Pay – Task Notifier</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #f0f4f8; display: flex; justify-content: center; align-items: center; min-height: 100vh; }
+    .card { background: white; border-radius: 16px; padding: 40px; max-width: 480px; width: 90%; box-shadow: 0 8px 30px rgba(0,0,0,0.08); }
+    h1 { color: #1a202c; font-size: 1.5rem; margin-bottom: 8px; }
+    p.subtitle { color: #718096; font-size: 0.9rem; margin-bottom: 28px; }
+    button { background: #4f46e5; color: white; border: none; padding: 12px 28px; border-radius: 8px; font-size: 1rem; cursor: pointer; width: 100%; transition: background 0.2s; }
+    button:hover { background: #4338ca; }
+    button:disabled { background: #a5b4fc; cursor: not-allowed; }
+    .status-box { margin-top: 24px; padding: 20px; border-radius: 10px; background: #f7fafc; border: 1px solid #e2e8f0; display: none; }
+    .status-box.visible { display: block; }
+    .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #718096; margin-bottom: 6px; }
+    .task-id { font-family: monospace; font-size: 0.8rem; color: #4a5568; word-break: break-all; }
+    .badge { display: inline-block; margin-top: 12px; padding: 4px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: 600; }
+    .badge.PENDING { background: #fef3c7; color: #92400e; }
+    .badge.STARTED { background: #dbeafe; color: #1e40af; }
+    .badge.SUCCESS { background: #d1fae5; color: #065f46; }
+    .badge.FAILURE { background: #fee2e2; color: #991b1b; }
+    .result { margin-top: 12px; font-size: 0.9rem; color: #2d3748; }
+    .spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #a5b4fc; border-top-color: #4f46e5; border-radius: 50%; animation: spin 0.7s linear infinite; margin-right: 6px; vertical-align: middle; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .error-msg { color: #e53e3e; font-size: 0.85rem; margin-top: 12px; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>🏥 Health Pay Notifier</h1>
+    <p class="subtitle">Trigger a background notification task and watch its progress in real time.</p>
+
+    <button id="triggerBtn" onclick="triggerTask()">Send Notification</button>
+
+    <div class="status-box" id="statusBox">
+      <div class="label">Task ID</div>
+      <div class="task-id" id="taskId">—</div>
+      <div class="label" style="margin-top:14px">Status</div>
+      <span class="badge PENDING" id="statusBadge">PENDING</span>
+      <div class="result" id="resultText"></div>
+      <div class="error-msg" id="errorText"></div>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = window.API_BASE || "http://localhost:8000";
+    let pollInterval = null;
+
+    async function triggerTask() {
+      const btn = document.getElementById("triggerBtn");
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spinner"></span>Triggering…';
+      document.getElementById("errorText").textContent = "";
+      document.getElementById("resultText").textContent = "";
+
+      try {
+        const res = await fetch(`${API_BASE}/notify/`, { method: "POST" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        showStatus(data.task_id, "PENDING");
+        pollStatus(data.task_id);
+      } catch (e) {
+        document.getElementById("errorText").textContent = "Failed to trigger task: " + e.message;
+        btn.disabled = false;
+        btn.textContent = "Send Notification";
+      }
+    }
+
+    function showStatus(taskId, status, result) {
+      const box = document.getElementById("statusBox");
+      box.classList.add("visible");
+      document.getElementById("taskId").textContent = taskId;
+      const badge = document.getElementById("statusBadge");
+      badge.textContent = status;
+      badge.className = `badge ${status}`;
+
+      if (status === "STARTED" || status === "PENDING") {
+        badge.innerHTML = `<span class="spinner"></span>${status}`;
+      }
+
+      if (result) {
+        document.getElementById("resultText").textContent =
+          typeof result === "object" ? result.message || JSON.stringify(result) : result;
+      }
+    }
+
+    async function pollStatus(taskId) {
+      if (pollInterval) clearInterval(pollInterval);
+      pollInterval = setInterval(async () => {
+        try {
+          const res = await fetch(`${API_BASE}/task_status/${taskId}`);
+          const data = await res.json();
+          showStatus(taskId, data.status, data.result);
+
+          if (data.status === "SUCCESS" || data.status === "FAILURE") {
+            clearInterval(pollInterval);
+            const btn = document.getElementById("triggerBtn");
+            btn.disabled = false;
+            btn.textContent = "Send Another Notification";
+          }
+        } catch (e) {
+          document.getElementById("errorText").textContent = "Polling error: " + e.message;
+          clearInterval(pollInterval);
+        }
+      }, 2000);
+    }
+  </script>
+</body>
+</html>
